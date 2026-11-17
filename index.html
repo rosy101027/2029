@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>대한민국 하천 모니터</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f2f6f9;color:#183044;font-family:Arial,"Noto Sans KR",sans-serif}
+header{background:linear-gradient(120deg,#123c5a,#1678a8);color:white;padding:30px 18px}.wrap{max-width:950px;margin:auto;padding:0 16px}
+main{padding:22px 0}.panel{background:white;border:1px solid #dce5ec;border-radius:15px;padding:19px;margin-bottom:15px}
+h1{margin:0 0 8px}h2{margin-top:0}.search{display:flex;gap:8px}input{flex:1;min-width:0;padding:13px;border:1px solid #bdcbd6;border-radius:9px;font-size:16px}button{background:#1769aa;color:white;border:0;border-radius:9px;padding:0 20px;font-weight:bold}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.metric{background:#f3f8fb;padding:14px;border-radius:10px}.metric small{display:block;color:#607789}.metric strong{font-size:22px;display:block;margin-top:6px}
+#map{height:360px;border-radius:10px}.muted{color:#617383;font-size:14px}.notice{background:#fff9e9;border-left:4px solid #d49a24;padding:13px;border-radius:8px;font-size:14px;line-height:1.6}.error{color:#b42318}
+@media(max-width:600px){.cards{grid-template-columns:1fr}.search{flex-direction:column}button{padding:13px}#map{height:290px}}
+</style></head><body>
+<header><div class="wrap"><h1>대한민국 하천 모니터</h1><div>하천 검색 및 대표 지점의 최근 강수량 확인</div></div></header>
+<main class="wrap">
+<section class="panel"><label for="river">하천 이름 검색</label><div class="search"><input id="river" list="names" placeholder="예: 한강"><datalist id="names"></datalist><button id="go">검색</button></div><p class="muted">예시로 등록된 5개 주요 하천만 검색할 수 있어.</p><p id="msg" class="muted">하천 이름을 입력해 줘.</p></section>
+<section class="panel"><h2 id="heading">하천 정보</h2><div class="cards"><div class="metric"><small>하천</small><strong id="name">-</strong></div><div class="metric"><small>대표 지점</small><strong id="place" style="font-size:17px">-</strong></div><div class="metric"><small>최근 시간별 강수량</small><strong id="rain">-</strong></div></div><p id="time" class="muted"></p></section>
+<section class="panel"><h2>위치 지도</h2><div id="map"></div><p class="muted">표시된 점은 하천 전체 경로가 아닌 대표 좌표야.</p></section>
+<section class="panel notice"><b>중요:</b> 이 사이트는 학습용 실험 프로젝트야. 강수량은 대표 좌표의 기상 자료이며 하천 수위나 유량이 아니야. 강수량만으로 실제 범람 확률을 계산할 수 없으므로 안전 판단에 사용하면 안 돼. 재난 정보는 공식 기관의 안내를 확인해 줘.</section>
+</main><footer class="wrap muted">GitHub Pages · 강수량: Open-Meteo · 지도: OpenStreetMap</footer>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const rivers=[
+{name:"한강",place:"서울 여의도 인근",lat:37.526,lon:126.934},
+{name:"낙동강",place:"부산 낙동강 하구 인근",lat:35.116,lon:128.948},
+{name:"금강",place:"공주 금강 인근",lat:36.446,lon:127.119},
+{name:"영산강",place:"광주 영산강 인근",lat:35.161,lon:126.851},
+{name:"섬진강",place:"하동 섬진강 인근",lat:35.067,lon:127.751}];
+const input=document.getElementById("river"),list=document.getElementById("names");
+rivers.forEach(r=>{let o=document.createElement("option");o.value=r.name;list.appendChild(o)});
+const map=L.map("map").setView([36.3,127.8],7);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:18,attribution:'&copy; OpenStreetMap'}).addTo(map);
+let marker;
+async function search(){let q=input.value.trim().replace(/\s/g,""),r=rivers.find(x=>x.name===q);
+if(!r){document.getElementById("msg").textContent="검색 결과가 없어. 한강, 낙동강, 금강, 영산강, 섬진강 중에서 골라 줘.";return}
+document.getElementById("heading").textContent=r.name+" 정보";document.getElementById("name").textContent=r.name;document.getElementById("place").textContent=r.place;document.getElementById("rain").textContent="조회 중…";
+map.setView([r.lat,r.lon],10);if(marker)map.removeLayer(marker);marker=L.marker([r.lat,r.lon]).addTo(map).bindPopup(r.name+" 대표 지점").openPopup();
+document.getElementById("msg").textContent="강수량 자료를 불러오고 있어.";
+try{let u=`https://api.open-meteo.com/v1/forecast?latitude=${r.lat}&longitude=${r.lon}&current=precipitation&hourly=precipitation&past_days=1&forecast_days=1&timezone=Asia%2FSeoul`;
+let response=await fetch(u);if(!response.ok)throw Error("기상 자료 서버 오류");let d=await response.json(),now=Date.now(),idx=0,best=Infinity;
+d.hourly.time.forEach((t,i)=>{let diff=Math.abs(new Date(t).getTime()-now);if(diff<best){best=diff;idx=i}});
+document.getElementById("rain").textContent=Number(d.hourly.precipitation[idx]||0).toFixed(1)+" mm";
+document.getElementById("time").textContent="자료 시각: "+d.hourly.time[idx].replace("T"," ")+" (대표 좌표 기준)";
+document.getElementById("msg").textContent="조회 완료. 다른 하천도 검색할 수 있어.";
+}catch(e){document.getElementById("rain").textContent="조회 실패";document.getElementById("msg").textContent="강수량 조회에 실패했어. 잠시 후 다시 시도해 줌.";}}
+document.getElementById("go").addEventListener("click",search);input.addEventListener("keydown",e=>{if(e.key==="Enter")search()});
+</script></body></html>
